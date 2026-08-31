@@ -2,6 +2,7 @@ import express from 'express';
 import http from 'http';
 import { createBareServer } from '@tomphttp/bare-server-node';
 import path from 'path';
+import { uvPath } from '@titaniumnetwork-dev/ultraviolet';
 
 const app = express();
 const server = http.createServer(app);
@@ -9,6 +10,7 @@ const bare = createBareServer('/bare/');
 const __dirname = path.resolve();
 
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/uv/', express.static(uvPath));
 
 server.on('request', (req, res) => {
   if (bare.shouldRoute(req)) {
