@@ -7,6 +7,7 @@
   },
   "dependencies": {
     "express": "^4.19.2",
-    "@tomphttp/bare-server-node": "^2.0.3"
+    "@tomphttp/bare-server-node": "^2.0.3",
+    "@titaniumnetwork-dev/ultraviolet": "^3.0.0"
   }
 }
