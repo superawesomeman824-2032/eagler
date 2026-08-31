@@ -18,12 +18,11 @@ app.get('/', (req, res) => {
   <meta charset="UTF-8">
   <title>Clover Proxy</title>
   <script src="/uv/uv.bundle.js"></script>
-  <script src="/uv.config.js"></script>
   <style>
-    body { margin: 0; display: flex; flex-direction: column; height: 100vh; background: #0d1117; font-family: sans-serif; }
+    body { margin: 0; display: flex; flex-direction: column; height: 100vh; background: #0d1117; font-family: sans-serif; color: #e6edf3; }
     #navbar { padding: 12px 20px; background: #161b22; display: flex; align-items: center; gap: 15px; border-bottom: 1px solid #30363d; }
     h1 { margin: 0; color: #56d364; font-size: 24px; font-weight: 800; }
-    input { flex-grow: 1; max-width: 600px; padding: 10px 15px; border-radius: 8px; border: 1px solid #30363d; background: #0d1117; color: white; outline: none; }
+    input { flex-grow: 1; max-width: 600px; padding: 10px 15px; border-radius: 8px; border: 1px solid #30363d; background: #0d1117; color: white; outline: none; font-size: 14px; }
     iframe { flex-grow: 1; border: none; width: 100%; background: white; }
   </style>
 </head>
@@ -33,7 +32,34 @@ app.get('/', (req, res) => {
     <input type="text" id="address" placeholder="Search DuckDuckGo or enter URL..." autofocus>
   </div>
   <iframe id="frame" src=""></iframe>
+  <script src="/uv.config.js"></script>
   <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js', { scope: '/' });
+    }
+    const input = document.getElementById('address');
+    const frame = document.getElementById('frame');
+    input.addEventListener('keydown', async (e) => {
+      if (e.key === 'Enter') {
+        let url = input.value.trim();
+        if (!url) return;
+        if (!url.startsWith('http') && !url.includes('.')) {
+          url = 'https://duckduckgo.com/?q=' + encodeURIComponent(url);
+        } else if (!url.startsWith('http')) {
+          url = 'https://' + url;
+        }
+        await navigator.serviceWorker.ready;
+        frame.src = __uv$config.prefix + __uv$config.encodeUrl(url);
+      }
+    });
+  </script>
+</body>
+</html>`);
+});
+
+app.get('/uv.config.js', (req, res) => {
+  res.setHeader('Content-Type', 'application/javascript');
+  res.send(`
     self.__uv$config = {
         prefix: '/uv/service/',
         bare: '/bare/',
@@ -45,26 +71,7 @@ app.get('/', (req, res) => {
         config: '/uv.config.js',
         sw: '/uv/uv.sw.js',
     };
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js', { scope: '/' });
-    }
-    const input = document.getElementById('address');
-    const frame = document.getElementById('frame');
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        let url = input.value.trim();
-        if (!url) return;
-        if (!url.startsWith('http') && !url.includes('.')) {
-          url = 'https://duckduckgo.com/?q=' + encodeURIComponent(url);
-        } else if (!url.startsWith('http')) {
-          url = 'https://' + url;
-        }
-        frame.src = __uv$config.prefix + __uv$config.encodeUrl(url);
-      }
-    });
-  </script>
-</body>
-</html>`);
+  `);
 });
 
 app.get('/sw.js', (req, res) => {
@@ -72,6 +79,7 @@ app.get('/sw.js', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
   res.send(`
     importScripts('/uv/uv.bundle.js');
+    importScripts('/uv.config.js');
     importScripts('/uv/uv.sw.js');
     const sw = new UVServiceWorker();
     self.addEventListener('fetch', event => {
@@ -90,5 +98,5 @@ server.on('request', (req, res) => {
 
 const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => {
-  console.log('Clover proxy running smoothly on port ' + PORT);
+  console.log('Clover proxy running on port ' + PORT);
 });
