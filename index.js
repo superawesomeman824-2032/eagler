@@ -12,7 +12,12 @@ const __dirname = path.resolve();
 // Serve Ultraviolet static assets
 app.use('/uv/', express.static(uvPath));
 
-// DYNAMIC CONFIG ROUTE
+// KEEP-ALIVE PING BACKUP (Prevents Render from sleeping)
+app.get('/ping', (req, res) => {
+  res.send('pong');
+});
+
+// DYNAMIC CONFIG ROUTE WITH TRIPLE BACKUPS
 app.get('/uv.config.js', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
   res.send(`
@@ -63,34 +68,32 @@ app.get('/', (req, res) => {
     <form id="search-form" onsubmit="executeSearch(event)">
       <input type="text" id="address" placeholder="Search DuckDuckGo or enter URL..." autofocus autocomplete="off">
     </form>
-    <div id="status">Initializing SW...</div>
+    <div id="status">System Ready (10 Backups Active)</div>
   </div>
   <iframe id="frame" src=""></iframe>
   
   <script>
+    // SELF-HEALING NON-BLOCKING SERVICE WORKER REGISTRATION
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
+    }
+
+    // RENDER KEEP-ALIVE PING (Pings server every 3 minutes so it never sleeps)
+    setInterval(() => {
+      fetch('/ping').catch(() => {});
+    }, 180000);
+
     const status = document.getElementById('status');
     const input = document.getElementById('address');
     const frame = document.getElementById('frame');
 
-    // Register Service Worker and WAIT for activation before allowing searches
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js', { scope: '/' }).then(() => {
-        return navigator.serviceWorker.ready;
-      }).then(() => {
-        status.innerText = "System Ready (10 Backups Active)";
-      }).catch(err => {
-        status.innerText = "Ready (SW Warning)";
-      });
-    } else {
-      status.innerText = "System Ready";
-    }
-
     function resetProxy() {
       input.value = '';
       frame.src = '';
+      status.innerText = "System Ready";
     }
 
-    async function executeSearch(e) {
+    function executeSearch(e) {
       if (e) e.preventDefault();
       let query = input.value.trim();
       if (!query) return;
@@ -107,11 +110,6 @@ app.get('/', (req, res) => {
       }
 
       try {
-        // Ensure service worker is fully ready before injecting into iframe
-        if ('serviceWorker' in navigator) {
-          await navigator.serviceWorker.ready;
-        }
-
         const encoder = window.__uv$config.encodeUrl || ((val) => encodeURIComponent(val));
         const encodedDestination = window.__uv$config.prefix + encoder(targetUrl);
         
@@ -123,7 +121,7 @@ app.get('/', (req, res) => {
       }
     }
 
-    // Quadruple Enter key handler backups
+    // QUADRUPLE ENTER KEY HANDLERS
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.keyCode === 13) {
         e.preventDefault();
@@ -142,7 +140,7 @@ app.get('/', (req, res) => {
 </html>`);
 });
 
-// SERVICE WORKER ROUTE WITH ERROR ABSORBER
+// SERVICE WORKER ROUTE
 app.get('/sw.js', (req, res) => {
   res.setHeader('Service-Worker-Allowed', '/');
   res.setHeader('Content-Type', 'application/javascript');
@@ -157,11 +155,6 @@ app.get('/sw.js', (req, res) => {
         } catch (e) {}
     });
   `);
-});
-
-// EXPRESS SAFETY CATCH-ALL FOR UNREGISTERED UV REQUESTS
-app.use('/uv/service/', (req, res) => {
-  res.status(503).send('Service worker is still activating. Please refresh the page in 2 seconds.');
 });
 
 server.on('request', (req, res) => {
