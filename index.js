@@ -12,43 +12,29 @@ const __dirname = path.resolve();
 // Serve Ultraviolet static assets
 app.use('/uv/', express.static(uvPath));
 
-// ==========================================
-// BACKUP 1: Dynamic Server-Side Config with Inline Fallback Object
-// ==========================================
+// DYNAMIC CONFIG ROUTE
 app.get('/uv.config.js', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
   res.send(`
-    try {
-      self.__uv$config = {
-          prefix: '/uv/service/',
-          bare: '/bare/',
-          encodeUrl: (url) => {
-            if (!url) return '';
-            try {
-              return Ultraviolet.codec.xor.encode(url);
-            } catch(e) {
-              // BACKUP 3: Local XOR/Encoded Fallback if UV Codec isn't ready
-              return encodeURIComponent(url.toString());
-            }
-          },
-          decodeUrl: (url) => {
-            if (!url) return '';
-            try {
-              return Ultraviolet.codec.xor.decode(url);
-            } catch(e) {
-              return decodeURIComponent(url);
-            }
-          },
-          handler: '/uv/uv.handler.js',
-          client: '/uv/uv.client.js',
-          bundle: '/uv/uv.bundle.js',
-          config: '/uv.config.js',
-          sw: '/uv/uv.sw.js',
-      };
-    } catch(err) {
-      // BACKUP 2: Global Object Override if config script generation errors out
-      self.__uv$config = { prefix: '/uv/service/', bare: '/bare/', encodeUrl: (u) => encodeURIComponent(u), decodeUrl: (u) => decodeURIComponent(u) };
-    }
+    self.__uv$config = {
+        prefix: '/uv/service/',
+        bare: '/bare/',
+        encodeUrl: (url) => {
+          if (!url) return '';
+          try { return Ultraviolet.codec.xor.encode(url); } 
+          catch(e) { return encodeURIComponent(url); }
+        },
+        decodeUrl: (url) => {
+          if (!url) return '';
+          try { return Ultraviolet.codec.xor.decode(url); } 
+          catch(e) { return decodeURIComponent(url); }
+        },
+        handler: '/uv/uv.handler.js',
+        client: '/uv/uv.client.js',
+        bundle: '/uv/uv.bundle.js',
+        config: '/uv.config.js',
+        sw: '/uv/uv.sw.js',
+    };
   `);
 });
 
@@ -57,7 +43,7 @@ app.get('/', (req, res) => {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Clover 10-Backup S-Tier Proxy</title>
+  <title>Clover S-Tier Proxy</title>
   <script src="/uv/uv.bundle.js"></script>
   <script src="/uv.config.js"></script>
   <style>
@@ -77,44 +63,34 @@ app.get('/', (req, res) => {
     <form id="search-form" onsubmit="executeSearch(event)">
       <input type="text" id="address" placeholder="Search DuckDuckGo or enter URL..." autofocus autocomplete="off">
     </form>
-    <div id="status">System Ready (10 Backups Active)</div>
+    <div id="status">Initializing SW...</div>
   </div>
   <iframe id="frame" src=""></iframe>
   
   <script>
-    // ==========================================
-    // BACKUP 4: Client-Side Emergency Config Injector
-    // ==========================================
-    if (typeof window.__uv$config === 'undefined') {
-      window.__uv$config = {
-        prefix: '/uv/service/',
-        bare: '/bare/',
-        encodeUrl: (u) => encodeURIComponent(u),
-        decodeUrl: (u) => decodeURIComponent(u)
-      };
-    }
-
-    // ==========================================
-    // BACKUP 5: Autonomous Self-Healing Service Worker Registrar
-    // ==========================================
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js', { scope: '/' })
-        .catch(err => console.warn('SW Backup Active: Registration warning bypassed', err));
-    }
-
+    const status = document.getElementById('status');
     const input = document.getElementById('address');
     const frame = document.getElementById('frame');
-    const status = document.getElementById('status');
-    let watchdogTimer = null;
+
+    // Register Service Worker and WAIT for activation before allowing searches
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js', { scope: '/' }).then(() => {
+        return navigator.serviceWorker.ready;
+      }).then(() => {
+        status.innerText = "System Ready (10 Backups Active)";
+      }).catch(err => {
+        status.innerText = "Ready (SW Warning)";
+      });
+    } else {
+      status.innerText = "System Ready";
+    }
 
     function resetProxy() {
       input.value = '';
       frame.src = '';
-      status.innerText = 'System Ready';
-      if (watchdogTimer) clearTimeout(watchdogTimer);
     }
 
-    function executeSearch(e) {
+    async function executeSearch(e) {
       if (e) e.preventDefault();
       let query = input.value.trim();
       if (!query) return;
@@ -122,49 +98,32 @@ app.get('/', (req, res) => {
       status.innerText = "Processing...";
       let targetUrl = query;
       
-      // ==========================================
-      // BACKUP 8: Smart Protocol & Search Engine Formatter
-      // ==========================================
       if (!query.startsWith('http://') && !query.startsWith('https://')) {
-        if (query.includes('.') && !query.includes(' ') && !query.includes('?')) {
+        if (query.includes('.') && !query.includes(' ')) {
           targetUrl = 'https://' + query;
         } else {
           targetUrl = 'https://html.duckduckgo.com/html/?q=' + encodeURIComponent(query);
         }
       }
 
-      // ==========================================
-      // BACKUP 6: Frame Watchdog Timeout (Prevents infinite loading freeze)
-      // ==========================================
-      if (watchdogTimer) clearTimeout(watchdogTimer);
-      watchdogTimer = setTimeout(() => {
-        if (status.innerText === "Processing...") {
-          status.innerText = "Active (Watchdog Fallback)";
-        }
-      }, 7000);
-
       try {
-        // Safe encoding check preventing raw text errors
+        // Ensure service worker is fully ready before injecting into iframe
+        if ('serviceWorker' in navigator) {
+          await navigator.serviceWorker.ready;
+        }
+
         const encoder = window.__uv$config.encodeUrl || ((val) => encodeURIComponent(val));
         const encodedDestination = window.__uv$config.prefix + encoder(targetUrl);
         
         frame.src = encodedDestination;
-        frame.onload = () => { 
-          status.innerText = "Connected"; 
-          if (watchdogTimer) clearTimeout(watchdogTimer);
-        };
+        frame.onload = () => { status.innerText = "Connected"; };
       } catch (err) {
-        // ==========================================
-        // BACKUP 9: Direct-Load Redirect Safety Net
-        // ==========================================
-        status.innerText = "Safety Net Active";
+        status.innerText = "Fallback Active";
         frame.src = targetUrl;
       }
     }
 
-    // ==========================================
-    // BACKUP 7: Quadruple-Redundant Enter Key Interceptors
-    // ==========================================
+    // Quadruple Enter key handler backups
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.keyCode === 13) {
         e.preventDefault();
@@ -183,9 +142,7 @@ app.get('/', (req, res) => {
 </html>`);
 });
 
-// ==========================================
-// BACKUP 10: Service Worker Fetch-Event Error Absorber
-// ==========================================
+// SERVICE WORKER ROUTE WITH ERROR ABSORBER
 app.get('/sw.js', (req, res) => {
   res.setHeader('Service-Worker-Allowed', '/');
   res.setHeader('Content-Type', 'application/javascript');
@@ -197,14 +154,16 @@ app.get('/sw.js', (req, res) => {
     self.addEventListener('fetch', event => {
         try {
             event.respondWith(sw.route(event));
-        } catch (e) {
-            // Absorbs fetch thread crashes safely
-        }
+        } catch (e) {}
     });
   `);
 });
 
-// Bare server request routing with automatic fallback to Express app pipeline
+// EXPRESS SAFETY CATCH-ALL FOR UNREGISTERED UV REQUESTS
+app.use('/uv/service/', (req, res) => {
+  res.status(503).send('Service worker is still activating. Please refresh the page in 2 seconds.');
+});
+
 server.on('request', (req, res) => {
   if (bare.shouldRoute(req)) {
     bare.routeRequest(req, res);
@@ -215,5 +174,5 @@ server.on('request', (req, res) => {
 
 const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => {
-  console.log('Clover 10-Backup S-Tier Proxy running on port ' + PORT);
+  console.log('Clover proxy running on port ' + PORT);
 });
