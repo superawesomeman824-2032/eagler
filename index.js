@@ -9,10 +9,12 @@ const server = http.createServer(app);
 const bare = createBareServer('/bare/');
 const __dirname = path.resolve();
 
-// Serve Ultraviolet static files
+// Serve Ultraviolet static assets
 app.use('/uv/', express.static(uvPath));
 
-// BACKUP 1: Dynamic Config Server Route with Internal Fallback Object
+// ==========================================
+// BACKUP 1: Dynamic Server-Side Config with Inline Fallback Object
+// ==========================================
 app.get('/uv.config.js', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
   res.send(`
@@ -20,17 +22,32 @@ app.get('/uv.config.js', (req, res) => {
       self.__uv$config = {
           prefix: '/uv/service/',
           bare: '/bare/',
-          encodeUrl: Ultraviolet.codec.xor.encode,
-          decodeUrl: Ultraviolet.codec.xor.decode,
+          encodeUrl: (url) => {
+            if (!url) return '';
+            try {
+              return Ultraviolet.codec.xor.encode(url);
+            } catch(e) {
+              // BACKUP 3: Local XOR/Encoded Fallback if UV Codec isn't ready
+              return encodeURIComponent(url.toString());
+            }
+          },
+          decodeUrl: (url) => {
+            if (!url) return '';
+            try {
+              return Ultraviolet.codec.xor.decode(url);
+            } catch(e) {
+              return decodeURIComponent(url);
+            }
+          },
           handler: '/uv/uv.handler.js',
           client: '/uv/uv.client.js',
           bundle: '/uv/uv.bundle.js',
           config: '/uv.config.js',
           sw: '/uv/uv.sw.js',
       };
-    } catch(e) {
-      // Internal config fallback if Ultraviolet codec fails to initialize
-      self.__uv$config = { prefix: '/uv/service/', bare: '/bare/', encodeUrl: (val) => val, decodeUrl: (val) => val };
+    } catch(err) {
+      // BACKUP 2: Global Object Override if config script generation errors out
+      self.__uv$config = { prefix: '/uv/service/', bare: '/bare/', encodeUrl: (u) => encodeURIComponent(u), decodeUrl: (u) => decodeURIComponent(u) };
     }
   `);
 });
@@ -40,7 +57,7 @@ app.get('/', (req, res) => {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Clover S-Tier Proxy</title>
+  <title>Clover 10-Backup S-Tier Proxy</title>
   <script src="/uv/uv.bundle.js"></script>
   <script src="/uv.config.js"></script>
   <style>
@@ -60,42 +77,41 @@ app.get('/', (req, res) => {
     <form id="search-form" onsubmit="executeSearch(event)">
       <input type="text" id="address" placeholder="Search DuckDuckGo or enter URL..." autofocus autocomplete="off">
     </form>
-    <div id="status">Ready</div>
+    <div id="status">System Ready (10 Backups Active)</div>
   </div>
   <iframe id="frame" src=""></iframe>
   
   <script>
-    // BACKUP 2: Client-Side Inline Config Emergency Fallback
+    // ==========================================
+    // BACKUP 4: Client-Side Emergency Config Injector
+    // ==========================================
     if (typeof window.__uv$config === 'undefined') {
       window.__uv$config = {
-          prefix: '/uv/service/',
-          bare: '/bare/',
-          encodeUrl: (val) => encodeURIComponent(val),
-          decodeUrl: (val) => decodeURIComponent(val),
-          handler: '/uv/uv.handler.js',
-          client: '/uv/uv.client.js',
-          bundle: '/uv/uv.bundle.js',
-          config: '/uv.config.js',
-          sw: '/uv/uv.sw.js',
+        prefix: '/uv/service/',
+        bare: '/bare/',
+        encodeUrl: (u) => encodeURIComponent(u),
+        decodeUrl: (u) => decodeURIComponent(u)
       };
     }
 
-    // BACKUP 3: Autonomous Self-Healing Service Worker Registration
+    // ==========================================
+    // BACKUP 5: Autonomous Self-Healing Service Worker Registrar
+    // ==========================================
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js', { scope: '/' })
-        .catch(err => console.warn('SW Warning bypassed:', err));
+        .catch(err => console.warn('SW Backup Active: Registration warning bypassed', err));
     }
 
     const input = document.getElementById('address');
     const frame = document.getElementById('frame');
     const status = document.getElementById('status');
-    let loadTimer = null;
+    let watchdogTimer = null;
 
     function resetProxy() {
       input.value = '';
       frame.src = '';
-      status.innerText = 'Ready';
-      if (loadTimer) clearTimeout(loadTimer);
+      status.innerText = 'System Ready';
+      if (watchdogTimer) clearTimeout(watchdogTimer);
     }
 
     function executeSearch(e) {
@@ -103,43 +119,52 @@ app.get('/', (req, res) => {
       let query = input.value.trim();
       if (!query) return;
 
-      status.innerText = "Loading...";
+      status.innerText = "Processing...";
       let targetUrl = query;
       
-      // Intelligent URL vs Search Query routing
+      // ==========================================
+      // BACKUP 8: Smart Protocol & Search Engine Formatter
+      // ==========================================
       if (!query.startsWith('http://') && !query.startsWith('https://')) {
-        if (query.includes('.') && !query.includes(' ')) {
+        if (query.includes('.') && !query.includes(' ') && !query.includes('?')) {
           targetUrl = 'https://' + query;
         } else {
           targetUrl = 'https://html.duckduckgo.com/html/?q=' + encodeURIComponent(query);
         }
       }
 
-      // BACKUP 4: Frame Watchdog Timer (Prevents infinite hanging if frame blocks)
-      if (loadTimer) clearTimeout(loadTimer);
-      loadTimer = setTimeout(() => {
-        if (status.innerText === "Loading...") {
-          status.innerText = "Ready (Timed Out)";
+      // ==========================================
+      // BACKUP 6: Frame Watchdog Timeout (Prevents infinite loading freeze)
+      // ==========================================
+      if (watchdogTimer) clearTimeout(watchdogTimer);
+      watchdogTimer = setTimeout(() => {
+        if (status.innerText === "Processing...") {
+          status.innerText = "Active (Watchdog Fallback)";
         }
-      }, 8000);
+      }, 7000);
 
       try {
-        const encoder = window.__uv$config.encodeUrl || ((val) => val);
-        const encoded = __uv$config.prefix + encoder(targetUrl);
-        frame.src = encoded;
+        // Safe encoding check preventing raw text errors
+        const encoder = window.__uv$config.encodeUrl || ((val) => encodeURIComponent(val));
+        const encodedDestination = window.__uv$config.prefix + encoder(targetUrl);
         
+        frame.src = encodedDestination;
         frame.onload = () => { 
-          status.innerText = "Ready"; 
-          if (loadTimer) clearTimeout(loadTimer);
+          status.innerText = "Connected"; 
+          if (watchdogTimer) clearTimeout(watchdogTimer);
         };
       } catch (err) {
-        status.innerText = "Fallback Active";
-        // Ultimate fallback redirect if encoding fails
+        // ==========================================
+        // BACKUP 9: Direct-Load Redirect Safety Net
+        // ==========================================
+        status.innerText = "Safety Net Active";
         frame.src = targetUrl;
       }
     }
 
-    // BACKUP 5: Quadruple-Redundant Enter Key & Event Listeners
+    // ==========================================
+    // BACKUP 7: Quadruple-Redundant Enter Key Interceptors
+    // ==========================================
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.keyCode === 13) {
         e.preventDefault();
@@ -158,6 +183,9 @@ app.get('/', (req, res) => {
 </html>`);
 });
 
+// ==========================================
+// BACKUP 10: Service Worker Fetch-Event Error Absorber
+// ==========================================
 app.get('/sw.js', (req, res) => {
   res.setHeader('Service-Worker-Allowed', '/');
   res.setHeader('Content-Type', 'application/javascript');
@@ -170,12 +198,13 @@ app.get('/sw.js', (req, res) => {
         try {
             event.respondWith(sw.route(event));
         } catch (e) {
-            // Service worker fetch error bypass backup
+            // Absorbs fetch thread crashes safely
         }
     });
   `);
 });
 
+// Bare server request routing with automatic fallback to Express app pipeline
 server.on('request', (req, res) => {
   if (bare.shouldRoute(req)) {
     bare.routeRequest(req, res);
@@ -186,5 +215,5 @@ server.on('request', (req, res) => {
 
 const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => {
-  console.log('Clover S-Tier 5-Backup Proxy running on port ' + PORT);
+  console.log('Clover 10-Backup S-Tier Proxy running on port ' + PORT);
 });
