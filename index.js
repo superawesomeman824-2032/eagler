@@ -9,15 +9,20 @@ const server = http.createServer(app);
 const bare = createBareServer('/bare/');
 const __dirname = path.resolve();
 
-// Serve Ultraviolet static assets
+// Prevent server crashes from unhandled network errors
+process.on('uncaughtException', (err) => {
+  console.error('Caught exception: ', err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 app.use('/uv/', express.static(uvPath));
 
-// KEEP-ALIVE PING BACKUP (Prevents Render from sleeping)
 app.get('/ping', (req, res) => {
   res.send('pong');
 });
 
-// DYNAMIC CONFIG ROUTE WITH TRIPLE BACKUPS
 app.get('/uv.config.js', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
   res.send(`
@@ -66,22 +71,18 @@ app.get('/', (req, res) => {
   <div id="navbar">
     <h1 onclick="resetProxy()">Clover</h1>
     <form id="search-form" onsubmit="executeSearch(event)">
-      <input type="text" id="address" placeholder="Search DuckDuckGo or enter URL..." autofocus autocomplete="off">
+      <input type="text" id="address" placeholder="Search URL or query..." autofocus autocomplete="off">
     </form>
-    <div id="status">System Ready (10 Backups Active)</div>
+    <div id="status">System Online</div>
   </div>
   <iframe id="frame" src=""></iframe>
   
   <script>
-    // SELF-HEALING NON-BLOCKING SERVICE WORKER REGISTRATION
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
     }
 
-    // RENDER KEEP-ALIVE PING (Pings server every 3 minutes so it never sleeps)
-    setInterval(() => {
-      fetch('/ping').catch(() => {});
-    }, 180000);
+    setInterval(() => { fetch('/ping').catch(() => {}); }, 180000);
 
     const status = document.getElementById('status');
     const input = document.getElementById('address');
@@ -90,7 +91,7 @@ app.get('/', (req, res) => {
     function resetProxy() {
       input.value = '';
       frame.src = '';
-      status.innerText = "System Ready";
+      status.innerText = "System Online";
     }
 
     function executeSearch(e) {
@@ -98,14 +99,15 @@ app.get('/', (req, res) => {
       let query = input.value.trim();
       if (!query) return;
 
-      status.innerText = "Processing...";
+      status.innerText = "Loading...";
       let targetUrl = query;
       
       if (!query.startsWith('http://') && !query.startsWith('https://')) {
         if (query.includes('.') && !query.includes(' ')) {
           targetUrl = 'https://' + query;
         } else {
-          targetUrl = 'https://html.duckduckgo.com/html/?q=' + encodeURIComponent(query);
+          // Use a simpler search provider format to bypass strict bot walls
+          targetUrl = 'https://www.bing.com/search?q=' + encodeURIComponent(query);
         }
       }
 
@@ -116,20 +118,11 @@ app.get('/', (req, res) => {
         frame.src = encodedDestination;
         frame.onload = () => { status.innerText = "Connected"; };
       } catch (err) {
-        status.innerText = "Fallback Active";
-        frame.src = targetUrl;
+        status.innerText = "Error";
       }
     }
 
-    // QUADRUPLE ENTER KEY HANDLERS
     input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.keyCode === 13) {
-        e.preventDefault();
-        executeSearch(e);
-      }
-    });
-
-    input.addEventListener('keypress', (e) => {
       if (e.key === 'Enter' || e.keyCode === 13) {
         e.preventDefault();
         executeSearch(e);
@@ -140,7 +133,6 @@ app.get('/', (req, res) => {
 </html>`);
 });
 
-// SERVICE WORKER ROUTE
 app.get('/sw.js', (req, res) => {
   res.setHeader('Service-Worker-Allowed', '/');
   res.setHeader('Content-Type', 'application/javascript');
@@ -157,15 +149,33 @@ app.get('/sw.js', (req, res) => {
   `);
 });
 
+// Safe request routing preventing 502/503 Gateway crashes
 server.on('request', (req, res) => {
-  if (bare.shouldRoute(req)) {
-    bare.routeRequest(req, res);
-  } else {
-    app(req, res);
+  try {
+    if (bare.shouldRoute(req)) {
+      bare.routeRequest(req, res);
+    } else {
+      app(req, res);
+    }
+  } catch (err) {
+    res.writeHead(500, { 'Content-Type': 'text/plain' });
+    res.end('Proxy routing error recovered.');
+  }
+});
+
+server.on('upgrade', (req, socket, head) => {
+  try {
+    if (bare.shouldRoute(req)) {
+      bare.routeUpgrade(req, socket, head);
+    } else {
+      socket.destroy();
+    }
+  } catch (err) {
+    socket.destroy();
   }
 });
 
 const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => {
-  console.log('Clover proxy running on port ' + PORT);
+  console.log('Clover server stable on port ' + PORT);
 });
